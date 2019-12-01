@@ -1,0 +1,618 @@
+#!/usr/bin/env python
+# coding: utf-8
+# In[17]:
+import sounddevice as sd
+from scipy.io.wavfile import write
+from sklearn.preprocessing import RobustScaler
+from datetime import datetime
+# vizualisation librairies
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+import seaborn as sns
+# bokeh
+from bokeh.plotting import figure, show, save
+from bokeh.models import ColumnDataSource, HoverTool, Range1d
+from bokeh.io import output_notebook
+from bokeh.transform import factor_cmap, factor_mark
+from bokeh.plotting import figure, show, output_file
+from bokeh.models.annotations import Title
+#
+# Panel as well
+import panel as pn
+
+sns.set()
+pn.extension()
+# get_ipython().run_line_magic('matplotlib', 'inline')
+# output_notebook()
+#
+import librosa as lr
+import numpy as np
+import random
+import requests
+# import os
+# from os import listdir
+import soundfile as sf  # !pip install soundfile
+import pandas as pd
+import itertools
+
+scaler = RobustScaler(with_centering=False)
+import os
+from flask import Flask, flash, request, redirect, url_for, jsonify
+from flask import render_template
+import json
+import numpy as np
+from werkzeug.utils import secure_filename
+
+from scipy import stats
+from sklearn.metrics.pairwise import euclidean_distances
+# copy file
+from shutil import copyfile
+# convert audio file to the good format
+import subprocess
+
+# subprocess.call('dir', shell=True)
+fs = 16000  # Sample rate
+seconds = 10  # Duration of recording
+embeddings_database = 'EMBEDDINGS_DATABASE.csv'  # define embeddings database to make predictions (csv file)
+microphone = "Thibault's laptop"  # define microphone used for records
+language = "english"  # define language spoken for records
+emotion_string = "neutral"  # define emotion spoken for records
+print(emotion_string)
+
+
+#### Processing pipeline functions
+
+
+def record_identification_median(X_new_speaker, database_csv_file, margin_identification):
+    # read database
+    data = pd.read_csv(database_csv_file)
+    # list speakers and emotions
+    speakers = list(data['speaker'].unique())
+    emotions = list(data['emotion'].unique())
+
+    # compute medians for new speaker
+    identity_new = np.median(X_new_speaker, axis=0, keepdims=True)
+    identity_new = identity_new[0]
+
+    # compute medians for authentified speakers
+    identities_authentified_speakers = []
+    for speaker in speakers:
+        X = data[data['speaker'] == speaker].iloc[:, :128].values
+        identities_authentified_speakers.append(np.median(X, axis=0, keepdims=True))
+    identities_authentified_speakers = np.array(identities_authentified_speakers)
+
+    ##### SPEAKER IDENTIFICATION #####
+
+    # speaker distances
+    distances = []
+    for identity in identities_authentified_speakers:
+        distances.append(np.sqrt(np.sum(np.square(identity_new - identity))))
+    distances = np.array(distances)
+    # print('distances:',distances)
+    print('distances from speakers:', distances)
+    most_likely_speaker = speakers[np.argmin(distances)]
+
+    # output speaker prediction
+    treshold_identification = margin_identification
+    if (distances.min() > treshold_identification):
+        speaker_prediction = "Sorry, I don't know you...Are you a new speaker?"
+    else:
+        speaker_prediction = most_likely_speaker
+    print('speaker prediction', speaker_prediction)
+
+    ##### EMOTION PREDICTION FOR THE IDENTIFIED SPEAKER #####
+
+    # select embeddings from identified speaker
+    df_identified_speaker = data[data['speaker'] == most_likely_speaker]
+
+    # compute medians of embeddings
+    emotions_identified_speaker = []
+    for emotion in emotions:
+        X = df_identified_speaker[df_identified_speaker['emotion'] == emotion].iloc[:, :128].values
+        emotions_identified_speaker.append(np.median(X, axis=0, keepdims=True))
+        print('shape', X.shape)
+    emotions_identified_speaker = np.array(emotions_identified_speaker)
+
+    # emotions distances
+    distances_emotions = []
+    for emotion in emotions_identified_speaker:
+        distances_emotions.append(np.sqrt(np.sum(np.square(identity_new - emotion))))
+    distances_emotions = np.array(distances_emotions)
+    # print('distances:',distances)
+    print('distances from emotions:', distances_emotions)
+    most_likely_emotion = emotions[np.argmin(distances_emotions)]
+    print('emotion prediction:', most_likely_emotion)
+
+    if distances_emotions[1] < distances_emotions[0]:
+        emotion_prediction = 'Wow, you sound happy today!'
+    else:
+        emotion_prediction = 'Oh, you sound sad today...Is everything alright?'
+    #print(emotion_prediction)
+
+    return most_likely_speaker, speaker_prediction, emotion_prediction
+
+
+def record_processing(audio_file):
+    # load file as numpy array
+    a, sr = lr.load(audio_file, sr=16000)
+    print(a.shape)
+    # load Deeptone Speech Identification model
+    url1 = "http://deeptone:8501/v1/models/model:predict"
+    # load Deeptone Speech Detection model
+    url2 = "http://speech:8501/v1/models/model:predict"
+
+    # get speech probabilities from new record
+    a_reshaped = a.reshape(-1, 1)
+    req_audio = requests.post(url2, json={"instances": [a_reshaped.tolist()]}).json()
+    proba = req_audio['predictions'][0]
+    new_speech_proba = []
+    for i in range(len(proba)):
+        new_speech_proba.append(proba[i][0])
+    new_speech_proba = np.array(new_speech_proba)
+    # create extended audio and probabilities to align it
+    proba_extend_new = np.repeat(new_speech_proba, len(a) / len(new_speech_proba))
+
+    # create compressed audio (filtered with probability of speech > treshold and take unique values)
+    treshold = 0.5
+    audio_compressed_new = a_reshaped[proba_extend_new > treshold]
+    audio_final = []
+    for i in range(len(audio_compressed_new)):
+        audio_final.append(audio_compressed_new[i][0])
+    audio_final = np.array(audio_final)
+
+    # get cleaned embeddings from new record
+    X_new_speaker = []
+    # define scaler
+    print(audio_final)
+    print('audio_final.shape:', audio_final.shape)
+    audio_final = audio_final.reshape(-1, 1)
+    req_audio = requests.post(url1, json={"instances": [audio_final.tolist()]}).json()
+    X_new_speaker.append(np.array(req_audio["predictions"][0]))
+    X_new_speaker = X_new_speaker[0]
+
+    # save embeddings in a temporary csv file
+    df_X_new_speaker = pd.DataFrame(X_new_speaker)
+    df_X_new_speaker.to_csv('/log/embeddings_temp.csv', index=False)
+
+    return X_new_speaker
+
+
+def save_embeddings_to_database(database_csv_file, file_path, speaker_name, emotion, language, microphone, duration):
+    # load database
+    data = pd.read_csv(database_csv_file)
+    # load embeddings dataframe
+    df_embeddings = pd.read_csv('embeddings_temp.csv')
+    # save new embeddings in the database:
+    df_embeddings.columns = [str(x) for x in list(range(128))]
+    df_embeddings['file_path'] = file_path
+    df_embeddings['speaker'] = speaker_name
+    df_embeddings['emotion'] = emotion
+    df_embeddings['language'] = language
+    df_embeddings['microphone'] = microphone
+    df_embeddings['duration_record_seconds'] = duration
+    # data.append(df_embeddings, ignore_index=True)
+    # update database
+    data_updated = pd.concat([data, df_embeddings], axis=0, ignore_index=True, sort=False)
+    data_updated.to_csv(embeddings_database, index=False)
+
+
+def random_words_generator():
+    df = pd.read_excel('3000_most_common_English_words.xlsx')
+    list_words = list(df['word'].values)
+    words = random.sample(list_words, 7)
+    return words[0], words[1], words[2], words[3], words[4], words[5], words[6]
+
+
+######################################################################################
+
+# ### Visualize speaker identification
+
+def visualize_embeddings_mean(embeddings_database, perplexity):
+    # load embeddings database
+    df = pd.read_csv(embeddings_database)
+    speakers = list(df['speaker'].unique())
+    emotions = list(df['emotion'].unique())
+    language = 'english'
+    X_mean_speakers = []
+    file_path_list = []
+    name_speakers = []
+    emotions_list = []
+    languages_list = []
+    for speaker in speakers:
+        df_means = df[df['speaker'] == speaker].groupby(['file_path']).mean()
+        df_means['file_path'] = df_means.index
+        df_means['language'] = language
+        df_means['speaker'] = speaker
+        df_means['emotion'] = df_means['file_path'].str.contains('happy', na=False)
+        df_means.loc[:, 'emotion'].replace(True, 'happy', inplace=True)
+        df_means.loc[:, 'emotion'].replace(False, 'neutral', inplace=True)
+        X_mean_speakers.append(df_means.iloc[:, :128].values)
+        file_path_list.append(list(df_means['file_path'].values))
+        name_speakers.append(list(df_means['speaker'].values))
+        emotions_list.append(list(df_means['emotion'].values))
+        languages_list.append(list(df_means['language'].values))
+    flattened = []
+    for i in range(len(X_mean_speakers)):
+        item = X_mean_speakers[i]
+        for el in item:
+            flattened.append(el)
+    X_embeddings = np.array(flattened)
+    file_path_list = [x for x in file_path_list]
+    flat_file_path_list = []
+    for el in file_path_list:
+        for item in el:
+            flat_file_path_list.append(item)
+    flat_name_speakers = []
+    for el in name_speakers:
+        for item in el:
+            flat_name_speakers.append(item)
+    flat_emotions_list = []
+    for el in emotions_list:
+        for item in el:
+            flat_emotions_list.append(item)
+    flat_languages_list = []
+    for el in languages_list:
+        for item in el:
+            flat_languages_list.append(item)
+    df_new = pd.DataFrame(X_embeddings)
+    df_new.columns = [str(x) for x in list(range(128))]
+    df_new['file_path'] = flat_file_path_list
+    df_new['speaker'] = flat_name_speakers
+    df_new['emotion'] = flat_emotions_list
+    df_new['language'] = flat_languages_list
+
+    # load embeddings from last records
+    df_record = pd.read_csv('/log/embeddings_temp.csv')
+    df_record['speaker'] = 'new_speaker'
+    # compute the mean
+    df_record_mean = df_record.groupby(['speaker']).mean()
+    df_record_mean['file_path'] = 'record-tcd.wav'
+    df_record_mean['speaker'] = 'last record'
+    df_record_mean['emotion'] = 'neutral'
+    df_record_mean['language'] = language
+    # concat new record to database for plotting
+    df_graph = pd.concat([df_new, df_record_mean], axis=0)
+    all_embeddings = df_graph.iloc[:, :128].values
+    # compute TSNE
+    X_tsne = TSNE(n_components=2, perplexity=perplexity).fit_transform(all_embeddings)
+    df_X_comp = pd.DataFrame(data=X_tsne, columns=["component_1_cl", "component_2_cl"])
+    # concat new components to dataframe
+    graph = pd.concat([df_graph.reset_index(), df_X_comp.reset_index()], axis=1)
+    graph = graph.drop(columns=['index'])
+
+    # add color to distinguish speakers
+    colormap = {'lorenzo': 'green', 'thibault': 'blue', 'last record': 'red'}
+    colors = [colormap[x] for x in graph['speaker']]
+    graph['color_speaker'] = colors
+    # add marker for speaker
+    markermap = {'happy': 'green', 'neutral': 'brown'}
+    markers = [markermap[x] for x in graph['emotion']]
+    graph['marker_emotion'] = markers
+
+    return graph
+
+
+# ### Visualize emotion prediction
+
+
+def visualize_emotions(embeddings_database, speaker_prediction, perplexity):
+    # load embeddings database
+    df = pd.read_csv(embeddings_database)
+
+    df = df[df['speaker'] == speaker_prediction]
+    emotions = list(df['emotion'].unique())
+    X_mean_speakers = []
+    file_path_list = []
+    emotions_list = []
+    for emotion in emotions:
+        df_means = df[df['emotion'] == emotion].groupby(['file_path']).mean()
+        df_means['file_path'] = df_means.index
+        df_means['emotion'] = df_means['file_path'].str.contains('happy', na=False)
+        df_means.loc[:, 'emotion'].replace(True, 'happy', inplace=True)
+        df_means.loc[:, 'emotion'].replace(False, 'neutral', inplace=True)
+        X_mean_speakers.append(df_means.iloc[:, :128].values)
+        file_path_list.append(list(df_means['file_path'].values))
+        emotions_list.append(list(df_means['emotion'].values))
+    X_embeddings = []
+    for i in range(len(X_mean_speakers)):
+        item = X_mean_speakers[i]
+        for el in item:
+            X_embeddings.append(el)
+    X_embeddings = np.array(X_embeddings)
+    flat_file_path_list = []
+    for el in file_path_list:
+        for item in el:
+            flat_file_path_list.append(item)
+    flat_emotions_list = []
+    for el in emotions_list:
+        for item in el:
+            flat_emotions_list.append(item)
+    df_new = pd.DataFrame(X_embeddings)
+    df_new.columns = [str(x) for x in list(range(128))]
+    df_new['file_path'] = flat_file_path_list
+    df_new['speaker'] = speaker_prediction
+    df_new['emotion'] = flat_emotions_list
+
+    # load embeddings from last records
+    df_record = pd.read_csv('/log/embeddings_temp.csv')
+    df_record['speaker'] = 'new_speaker'
+
+    # compute the mean
+    df_record_mean = df_record.groupby(['speaker']).mean()
+    df_record_mean['file_path'] = 'record-tcd.wav'
+    df_record_mean['speaker'] = 'last record'
+    df_record_mean['emotion'] = 'last record'
+
+    # concat new record to database for plotting
+    df_graph = pd.concat([df_new, df_record_mean], axis=0)
+    all_embeddings = df_graph.iloc[:, :128].values
+
+    # compute TSNE
+    X_tsne = TSNE(n_components=2, perplexity=perplexity).fit_transform(all_embeddings)
+    df_X_comp = pd.DataFrame(data=X_tsne, columns=["component_1_cl", "component_2_cl"])
+
+    # concat new components to dataframe
+    graph = pd.concat([df_graph.reset_index(), df_X_comp.reset_index()], axis=1)
+    graph['language'] = 'english'
+    graph = graph.drop(columns=['index'])
+
+    # add color to distinguish speakers
+    colormap = {'happy': 'green', 'neutral': 'grey', 'last record': 'red'}
+    colors = [colormap[x] for x in graph['emotion']]
+    graph['color_emotion'] = colors
+
+    return graph
+
+
+def plot_speakers_embeddings(df2):
+    speakers = ['all'] + sorted(pd.unique(df2['speaker']))
+    emotions = ['all'] + sorted(pd.unique(df2['emotion']))
+    languages = ['all'] + sorted(pd.unique(df2['language']))
+    sp = pn.widgets.Select(name='Speaker', options=speakers)
+    em = pn.widgets.Select(name='Emotion (green:)', options=emotions)
+    la = pn.widgets.Select(name='Language', options=languages)
+    title = '# Visualize embeddings'
+    subtitle = 'Select parameters for plotting'
+
+    @pn.depends(sp.param.value, em.param.value, la.param.value)
+    def get_plot(sp, em, la):
+        if sp == 'all':
+            group = df2
+            if em == 'all':
+                group = df2
+                if la == 'all':
+                    group = df2
+                else:
+                    group = df2[df2['language'] == la]
+            else:
+                group = df2[df2['emotion'] == em]
+                if la == 'all':
+                    group = df2[df2['emotion'] == em]
+                else:
+                    group = group[group['language'] == la]
+        else:
+            group = df2[df2['speaker'] == sp]
+            if em == 'all':
+                group = df2[df2['speaker'] == sp]
+                if la == 'all':
+                    group = df2[df2['speaker'] == sp]
+                else:
+                    group = group[group['language'] == la]
+            else:
+                group = group[group['emotion'] == em]
+                if la == 'all':
+                    group = group[group['emotion'] == em]
+                else:
+                    group = group[group['language'] == la]
+        cds = ColumnDataSource(group)
+        hover = HoverTool(
+            tooltips=[
+                ("param", "@speaker @emotion @language"),
+                ("(component_1_cl,component_2_cl)", "(@component_1_cl, @component_2_cl)"),
+            ])
+        p = figure(plot_width=700, plot_height=500)  # , tools=[hover, 'wheel_zoom'])
+        p.scatter('component_1_cl', 'component_2_cl', fill_alpha=0.5, size=10, fill_color='color_speaker', source=cds,
+                  # marker='marker_emotion',
+                  line_color='#000000', legend='speaker')
+        p.xaxis.axis_label = '1st t-sne component'
+        p.yaxis.axis_label = '2nd t-sne component'
+        p.x_range = Range1d(-200, 200, bounds=(-200, 200))
+        p.y_range = Range1d(-200, 200, bounds=(-200, 200))
+        t = Title()
+        t.text = 'speakers'
+        p.title = t
+        return p
+
+    pn.Row(
+        pn.Column(title, subtitle, sp, em, la),
+        get_plot
+    ).servable()
+    p = get_plot("all", "all", "english")
+    output_file("./templates/speaker_label.html", title="speaker_label.py example")
+    save(p)
+
+
+def plot_emotions_embeddings(df2):
+    speakers = ['all'] + sorted(pd.unique(df2['speaker']))
+    emotions = ['all'] + sorted(pd.unique(df2['emotion']))
+    languages = ['all'] + sorted(pd.unique(df2['language']))
+    sp = pn.widgets.Select(name='Speaker', options=speakers)
+    em = pn.widgets.Select(name='Emotion (green:)', options=emotions)
+    la = pn.widgets.Select(name='Language', options=languages)
+    title = '# Visualize embeddings'
+    subtitle = 'Select parameters for plotting'
+
+    @pn.depends(sp.param.value, em.param.value, la.param.value)
+    def get_plot(sp, em, la):
+        if sp == 'all':
+            group = df2
+            if em == 'all':
+                group = df2
+                if la == 'all':
+                    group = df2
+                else:
+                    group = df2[df2['language'] == la]
+            else:
+                group = df2[df2['emotion'] == em]
+                if la == 'all':
+                    group = df2[df2['emotion'] == em]
+                else:
+                    group = group[group['language'] == la]
+        else:
+            group = df2[df2['speaker'] == sp]
+            if em == 'all':
+                group = df2[df2['speaker'] == sp]
+                if la == 'all':
+                    group = df2[df2['speaker'] == sp]
+                else:
+                    group = group[group['language'] == la]
+            else:
+                group = group[group['emotion'] == em]
+                if la == 'all':
+                    group = group[group['emotion'] == em]
+                else:
+                    group = group[group['language'] == la]
+        cds = ColumnDataSource(group)
+        hover = HoverTool(
+            tooltips=[
+                ("param", "@speaker @emotion @language"),
+                ("(component_1_cl,component_2_cl)", "(@component_1_cl, @component_2_cl)"),
+            ])
+        p = figure(plot_width=700, plot_height=500)  # , tools=[hover, 'wheel_zoom'])
+        p.scatter('component_1_cl', 'component_2_cl', fill_alpha=0.5, size=10, fill_color='color_emotion', source=cds,
+                  # marker='marker_emotion',
+                  line_color='#000000', legend='emotion')
+        p.xaxis.axis_label = '1st t-sne component'
+        p.yaxis.axis_label = '2nd t-sne component'
+        p.x_range = Range1d(-200, 200, bounds=(-200, 200))
+        p.y_range = Range1d(-200, 200, bounds=(-200, 200))
+        t = Title()
+        t.text = 'speakers'
+        p.title = t
+        return p
+
+    pn.Row(
+        pn.Column(title, subtitle, sp, em, la),
+        get_plot
+    ).servable()
+    p = get_plot("all", "all", "english")
+    output_file("./templates/emotion_label.html", title="emotion_label.py example")
+    save(p)
+
+
+# ## Run Flask app
+
+
+app = Flask(__name__)
+
+
+@app.route("/identification")
+def identification():
+    return render_template('speaker_label.html')
+
+
+@app.route("/emotion")
+def emotion():
+    return render_template('emotion_label.html')
+
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    w0, w1, w2, w3, w4, w5, w6 = random_words_generator()
+    sp = '  '
+    emotions = ['happy', 'neutral']
+    if request.method == 'POST':
+        speaker_prediction = ""
+        emotion_prediction = ""
+        choices = request.form.get('user')
+
+        if choices == "other":
+            choices = request.form.get('new')
+        if choices == None:
+            # record
+            print("enterif")
+            myrecording = sd.rec(10 * fs, samplerate=fs, channels=2)  # , #blocking=True)
+            sd.wait()
+            # save as temporary wav file
+            file_path_temp_1 = "/log/my_record1.wav"
+            write(file_path_temp_1, fs, myrecording)
+
+            # transcode wav file into good format
+            file_path_temp_2 = "/log/my_record1_tcd.wav"
+            command_subprocess = 'sox ' + file_path_temp_1 + ' -V1 -c 1 -e signed-integer -b 16 -t wav ' + file_path_temp_2
+            subprocess.run(command_subprocess.split(' '))
+
+            # process the audio file: get the embeddings
+            embeddings = record_processing(file_path_temp_2)
+
+            # make prediction:
+            margin_identification = 0.6
+            most_likely_speaker, speaker_prediction, emotion_prediction = record_identification_median(embeddings,
+                                                                                                       embeddings_database,
+                                                                                                       margin_identification)
+            variable = speaker_prediction
+            emo = emotion_prediction
+
+            # visualize speaker identification
+            perplexity_1 = 15
+            dataframe_plot_speaker = visualize_embeddings_mean(embeddings_database, perplexity_1)
+            plot_speakers_embeddings(dataframe_plot_speaker)
+
+            # vizualize emotions
+            perplexity_2 = 15
+            dataframe_plot_emotion = visualize_emotions(embeddings_database, most_likely_speaker, perplexity_2)
+            plot_emotions_embeddings(dataframe_plot_emotion)
+            if variable == "lorenzo":
+                image = "https://media.licdn.com/dms/image/C4D03AQFyt7ip019QIQ/profile-displayphoto-shrink_200_200/0?e=1579132800&v=beta&t=zkU6ZX0lVIEoMGmswtplcPlmzsH9t5IDnjI0nTT8EtE"
+            elif variable == "thibault":
+                image = "https://media.licdn.com/dms/image/C5603AQH8d4Du9q7YRQ/profile-displayphoto-shrink_200_200/0?e=1579132800&v=beta&t=SAc1wNJB8OWIHExuPhQIm62azafl0EwpkhwTkEl7zYY"
+            else:
+                image = "https://cdn4.iconfinder.com/data/icons/web-ui-color/128/Lock_red-512.png"
+
+        else:
+
+            directory = choices
+
+            # set files path
+            if not os.path.exists('../log/' + directory):
+                os.mkdir('../log/' + directory)
+            if not os.path.exists('../log/' + directory + '/' + language + '_' + emotion_string):
+                os.mkdir('../log/' + directory + '/' + language + '_' + emotion_string)
+            folder_path = '../log/' + directory + '/' + language + '_' + emotion_string
+            unique_date = datetime.utcnow().strftime('%Y-%m-%d-%H_%M_%S.%f')[:-3]
+            file_path = folder_path + "/" + directory + "-%s.wav" % unique_date
+            # Copy compressed wav file in the audio_files folder
+            copyfile('../log/my_record1_tcd.wav', file_path)
+
+            # save new embeddings in the database:
+            save_embeddings_to_database(embeddings_database, file_path, choices, emotion_string, language, microphone,
+                                        seconds)
+
+            variable = speaker_prediction
+            emo = emotion_prediction
+
+            if variable == "lorenzo":
+                image = "https://media.licdn.com/dms/image/C4D03AQFyt7ip019QIQ/profile-displayphoto-shrink_200_200/0?e=1579132800&v=beta&t=zkU6ZX0lVIEoMGmswtplcPlmzsH9t5IDnjI0nTT8EtE"
+            elif variable == "thibault":
+                image = "https://media.licdn.com/dms/image/C5603AQH8d4Du9q7YRQ/profile-displayphoto-shrink_200_200/0?e=1579132800&v=beta&t=SAc1wNJB8OWIHExuPhQIm62azafl0EwpkhwTkEl7zYY"
+            else:
+                image = "https://cdn4.iconfinder.com/data/icons/web-ui-color/128/Lock_red-512.png"
+
+        data = pd.read_csv(embeddings_database)
+        users = [""]
+        for item in list(data['speaker'].unique()):
+            users.append(item)
+        return render_template('index.html', users=users, var=variable, em=emo, image=image)
+    data = pd.read_csv(embeddings_database)
+    users = [""]
+    for item in list(data['speaker'].unique()):
+        users.append(item)
+    image = "https://www.macitynet.it/wp-content/uploads/2018/09/lucchettoblu-696x352.jpg"
+    var = " "
+    em = " "
+    return render_template('index.html', users=users, var=var, em=em, w0=w0, w1=w1, w2=w2, w3=w3, w4=w4, w5=w5, w6=w6,
+                           sp=sp, image=image)
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0')

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="">
+  <meta name="author" content="">
+  
+  <title>EMOLOCK </title>
+ 
+
+  <!-- Bootstrap core CSS -->
+  <link href="/static/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Custom styles for this template -->
+  <link href="/staticcss/small-business.css" rel="stylesheet">
+
+</head>
+
+<body style="background-color:powderblue;">
+  <!-- Navigation -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <div class="container">
+      <a class="navbar-brand" href="#"></a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarResponsive">
+        <ul class="navbar-nav ml-auto">
+          <li class="nav-item active">
+            <a class="nav-link" href="#">Home
+              <span class="sr-only">(current)</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#">About</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#">Code</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#">Contact</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page Content -->
+  <div class="container">
+
+    <!-- Heading Row -->
+     <p class="card-text"> ....  </p>
+    <div class="row align-items-center my-5">
+      <div class="col-lg-4">
+        <h1 style="color:blue;"stylle= "font-weight:bolder;" class="font-weight-light">EMOLOCK</h1>
+       <h5 class="text-black m-0">
+         <input type="image" src="https://uploads-ssl.webflow.com/5c5f40cbbad5230029145b5c/5c605469d885ee130ad083a1_OTO.png" width="100" height="100"/> 
+        <p>Hello, welcome to the speech identification system. </p>     <p>Press the red button below to start the record 
+
+        and pronounce the following words:</p>
+
+        </h5>
+         <h5 class="text-black m-0" style="font-style: italic;">
+
+ <p>{{ w0 }}{{ sp }}{{ w1 }}{{ sp }}{{ w2 }}{{ sp }}{{ w3 }}{{ sp }}{{ w4 }}{{ sp }}{{ w5 }}{{ sp }}{{ w6 }}</p>
+
+      </h5>
+      <form method=post enctype=multipart/form-data>
+<input type="image" src="https://catwatchful.com/main/wp-content/uploads/2018/04/grabacion-de-entorno.png" onclick="$('#loading').show();", width="200" height="200"/>
+<style>
+input[type="submit"]{
+    /* change these properties to whatever you want */
+    background-color: #555;
+    color: #fff;
+    border-radius: 10px;
+}
+</style>
+      </form>
+      </div>
+      <!-- /.col-md-8 -->
+      <div class="col-lg-4">
+        <div id="loading" style="display:none;"><img src="https://timertopia.files.wordpress.com/2017/04/15-seconds.gif", width="300" height="175" alt="" /></div>
+        
+      </div>
+      <!-- /.col-lg-4 -->
+      
+      <div class="col-lg-4">
+
+        <img src={{image}} alt="this slowpoke moves"  width=300/>
+        <div id="loading" style="display:none;"><img src="https://i.imgur.com/gRGZJvs.gif" alt="" />Loading!</div>
+        
+      </div>
+      <!-- /.col-lg-4 -->
+
+      
+    </div>
+    <!-- /.row -->
+
+    <!-- Call to Action Well -->
+    <div class="card text-white bg-secondary my-5 py-2 text-center">
+      <div class="card-body">
+        <h2 class="text-white m-0">
+
+        <p>I think you are...{{ var }}</p>
+
+        <p>{{ em }}</p>
+
+          </h2>
+      </div>
+    </div>
+
+    <!-- Content Row -->
+    <div class="row">
+      <div class="col-md-4 mb-5">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="card-title">Log-in</h2>
+            <p class="card-text">To improve the accuracy of the system we ask you to confirm your username from the following list:</p>
+<form method=post enctype=multipart/form-data action="/">
+    <select name= "user" >
+     <option value="{{users[0]}}" selected>{{users[0]}}</option>
+    {% for user in users[1:] %}
+    <option value= "{{user}}">{{user}}</option>"
+    {% endfor %}
+    </select>
+    <input type="submit" name="submit">
+    <p>
+      <p class="card-text">if you are new please add your name:</p>
+      <input type=text name=new>
+      <input type=submit>
+    </p>
+ 
+    
+    </form>
+    </select>
+          </div>
+          
+        </div>
+      </div>
+      <!-- /.col-md-4 -->
+      <div class="col-md-4 mb-5">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="card-title">Users</h2>
+            <p class="card-text">Users that are registered</p>
+            <img src="https://media.licdn.com/dms/image/C4D03AQFyt7ip019QIQ/profile-displayphoto-shrink_200_200/0?e=1579132800&v=beta&t=zkU6ZX0lVIEoMGmswtplcPlmzsH9t5IDnjI0nTT8EtE" alt="Lorenzo" style="width:100px;height:100px;">
+            <img src="https://media.licdn.com/dms/image/C5603AQH8d4Du9q7YRQ/profile-displayphoto-shrink_200_200/0?e=1579132800&v=beta&t=SAc1wNJB8OWIHExuPhQIm62azafl0EwpkhwTkEl7zYY" alt="Lorenzo" style="width:100px;height:100px;">
+          </div>
+          
+        </div>
+      </div>
+      <!-- /.col-md-4 -->
+      <div class="col-md-4 mb-5">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="card-title">Visualization</h2>
+            <p class="card-text">Find out which user has a voice similar to yours!?
+      <a href="{{ url_for('identification') }}"> speakers </a></p>
+         <p class="card-text">How do you feel today? <a href="{{ url_for('emotion') }}"> emotions </a></p>
+     
+    <p>
+   </form>
+    </div>
+    
+          </div>
+         
+        </div>
+      </div>
+      <!-- /.col-md-4 -->
+
+    </div>
+    <!-- /.row -->
+
+  </div>
+  <!-- /.container -->
+
+  <!-- Footer -->
+  <footer class="py-5 bg-dark">
+    <div class="container">
+      <p class="m-0 text-center text-white">Lorenzo & Thibault; EMOLOCK 2019</p>
+    </div>
+    <!-- /.container -->
+  </footer>
+
+  <!-- Bootstrap core JavaScript -->
+  <script src="/static/vendor/jquery/jquery.min.js"></script>
+  <script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+</body>
+
+</html>
